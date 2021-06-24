@@ -19,21 +19,39 @@
         android:layout_height="match_parent">
 
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical">
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+            android:orientation="vertical"
+            android:layout_gravity="center">
+
+            <Button
+                android:id="@+id/btn_base"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/base"
+                android:layout_margin="10dp"></Button>
 
             <Button
                 android:id="@+id/btn_record"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/record"></Button>
+                android:text="@string/record"
+                android:layout_margin="10dp"
+                ></Button>
 
             <Button
                 android:id="@+id/btn_double_preview"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_margin="10dp"
                 android:text="@string/double_preview"></Button>
+
+            <Button
+                android:id="@+id/btn_yuv_callback"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="10dp"
+                android:text="@string/title_yuv_callback"></Button>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

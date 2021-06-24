@@ -34,6 +34,8 @@ import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.MediaRecorder;
 import android.os.Bundle;
@@ -543,6 +545,29 @@ public class Camera2VideoFragment extends Fragment
     }
 
     /**
+     * A {@link CameraCaptureSession.CaptureCallback} that handles events related to JPEG capture.
+     */
+    private CameraCaptureSession.CaptureCallback mCaptureCallback
+            = new CameraCaptureSession.CaptureCallback() {
+
+        @Override
+        public void onCaptureProgressed(@NonNull CameraCaptureSession session,
+                                        @NonNull CaptureRequest request,
+                                        @NonNull CaptureResult partialResult) {
+        }
+
+        @Override
+        public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                       @NonNull CaptureRequest request,
+                                       @NonNull final TotalCaptureResult result) {
+            final Float focusDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
+            final Integer lensState = result.get(CaptureResult.LENS_STATE);
+            Log.v(TAG,"------ onCaptureCompleted();lensState:"+lensState + ";focusDistance:"+focusDistance + ";frameNum:"+ result.getFrameNumber());
+        }
+    };
+
+
+    /**
      * Update the camera preview. {@link #startPreview()} needs to be called in advance.
      */
     private void updatePreview() {
@@ -550,13 +575,20 @@ public class Camera2VideoFragment extends Fragment
             return;
         }
         try {
+            applyLensFocusDistance(mPreviewBuilder,3.0f);
             setUpCaptureRequestBuilder(mPreviewBuilder);
 //            HandlerThread thread = new HandlerThread("CameraPreview");
 //            thread.start();
-            mPreviewSession.setRepeatingRequest(mPreviewBuilder.build(), null, mBackgroundHandler);
+            mPreviewSession.setRepeatingRequest(mPreviewBuilder.build(),mCaptureCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+    }
+
+    private void applyLensFocusDistance(CaptureRequest.Builder builder,float lensFocusDistance){
+        builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME,1000000L);
+        builder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_OFF);
+        builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, lensFocusDistance);
     }
 
     private void setUpCaptureRequestBuilder(CaptureRequest.Builder builder) {

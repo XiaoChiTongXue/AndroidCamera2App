@@ -7,6 +7,10 @@
     <string name="camera_error">设备不支持 Camera2 API.</string>
     <string name="stop">停止</string>
     <string name="record">录像</string>
+    <string name="preview">预览</string>
+    <string name="base">基本</string>
+    <string name="save_yuv_file">保存yuv文件</string>
+    <string name="title_yuv_callback">预览YUV回调</string>
     <string name="permission_request">该应用需要相机和mic权限!!!</string>
     <string name="double_preview">双预览</string>
     <string name="background_record">后台录像</string>

@@ -62,6 +62,13 @@ import android.widget.CompoundButton;
 import android.widget.Switch;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.DialogFragment;
+import androidx.fragment.app.Fragment;
+
 import com.android.camera2demo.R;
 import com.android.camera2demo.utils.FileUtil;
 import com.android.camera2demo.utils.ImageUtil;
@@ -82,20 +89,13 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import androidx.fragment.app.DialogFragment;
-import androidx.fragment.app.Fragment;
-
 /**
- * Normal Fun Of Camera
+ * ImageReader Callback YUV
  * @author york.zhou
  * 欢迎关注我的微信公众号:小驰笔记
  */
-public class Camera2BasicFragment extends Fragment
-        implements View.OnClickListener, ActivityCompat.OnRequestPermissionsResultCallback {
+public class Camera2YuvCallbackFragment extends Fragment
+        implements ActivityCompat.OnRequestPermissionsResultCallback {
 
     /**
      * Conversion from screen rotation to JPEG orientation.
@@ -111,17 +111,10 @@ public class Camera2BasicFragment extends Fragment
         ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
-    private Switch mSwPreview;
-
-    /**
-     * An {@link AutoFitTextureView} for camera preview.
-     */
-    private AutoFitTextureView mTextureView;
-
     /**
      * Tag for the {@link Log}.
      */
-    private static final String TAG = Camera2BasicFragment.class.getSimpleName();
+    private static final String TAG = Camera2YuvCallbackFragment.class.getSimpleName();
 
     /**
      * Camera state: Showing camera preview.
@@ -187,6 +180,15 @@ public class Camera2BasicFragment extends Fragment
     private String mCameraId;
 
     /**
+     * An {@link AutoFitTextureView} for camera preview.
+     */
+    private AutoFitTextureView mTextureView;
+
+    private Switch mSwSaveYuvFile;
+
+    private boolean mSaveYuvFile = false; //if need to save yuv file
+
+    /**
      * A {@link CameraCaptureSession } for camera preview.
      */
     private CameraCaptureSession mPreviewCaptureSession;
@@ -218,6 +220,7 @@ public class Camera2BasicFragment extends Fragment
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+
             createCameraPreviewSession();
         }
 
@@ -257,31 +260,62 @@ public class Camera2BasicFragment extends Fragment
     /**
      * An {@link ImageReader} that handles still image capture.
      */
-    private ImageReader mImageReader;
+    private ImageReader mImageReaderYuv;
 
 
-    /**
-     * This is the output file for our picture.
-     */
-    private File mFile;
-
-    /**
-     * This a callback object for the {@link ImageReader}. "onImageAvailable" will be called when a
-     * still image is ready to be saved.
-     */
-    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener
+    private Object mImageReaderLock = 1;//1 available,0 unAvailable
+    private final ImageReader.OnImageAvailableListener mOnYuvImageAvailableListener
             = new ImageReader.OnImageAvailableListener() {
+        private byte[] y;
+        private byte[] u;
+        private byte[] v;
+        private ReentrantLock lock = new ReentrantLock();
+
         @Override
         public void onImageAvailable(ImageReader reader) {
             Image image = reader.acquireLatestImage();
-            mBackgroundHandler.post(new ImageSaver(image, generateJpegFile()));
+
+            if (image == null) {
+                return;
+            }
+
+            if(!mSaveYuvFile){
+                image.close();
+                return;
+            }
+
+            synchronized (mImageReaderLock) {
+                if (!mImageReaderLock.equals(1)) {
+                    Log.v(TAG, "--- image not available,just return!!!");
+                    image.close();
+                    return;
+                }
+                if (ImageFormat.YUV_420_888 == image.getFormat()) {
+                    Image.Plane[] planes = image.getPlanes();
+
+//                    Log.v(TAG,"onImageAvailable();rowStride:"+planes[0].getRowStride() + ";pixelStride"+planes[0].getPixelStride());
+                    // 加锁确保y、u、v来源于同一个Image
+                    lock.lock();
+
+                    if (y == null) {
+                        y = new byte[planes[0].getBuffer().limit() - planes[0].getBuffer().position()];
+                        u = new byte[planes[1].getBuffer().limit() - planes[1].getBuffer().position()];
+                        v = new byte[planes[2].getBuffer().limit() - planes[2].getBuffer().position()];
+                    }
+
+                    if (image.getPlanes()[0].getBuffer().remaining() == y.length) {
+                        planes[0].getBuffer().get(y);
+                        planes[1].getBuffer().get(u);
+                        planes[2].getBuffer().get(v);
+
+                        mBackgroundHandler.post(new YuvSaver(y, u, v, planes[0].getRowStride(),mImageReaderYuv.getHeight(), FileUtil.getYuvFilePath(getContext())));
+                    }
+                }
+                lock.unlock();
+            }
+            image.close();
         }
     };
-
-    private File generateJpegFile(){
-        mFile = FileUtil.generateJpegFile(getContext());
-        return mFile;
-    }
 
     /**
      * {@link CaptureRequest.Builder} for the camera preview
@@ -326,65 +360,16 @@ public class Camera2BasicFragment extends Fragment
      */
     private CameraCaptureSession.CaptureCallback mCaptureCallback
             = new CameraCaptureSession.CaptureCallback() {
-
-        private void process(CaptureResult result) {
-            switch (mState) {
-                case STATE_PREVIEW: {
-                    // We have nothing to do when the camera preview is working normally.
-                    break;
-                }
-                case STATE_WAITING_LOCK: {
-                    Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
-                    if (afState == null) {
-                        captureStillPicture();
-                    } else if (CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED == afState ||
-                            CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED == afState) {
-                        // CONTROL_AE_STATE can be null on some devices
-                        Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
-                        if (aeState == null ||
-                                aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
-                            mState = STATE_PICTURE_TAKEN;
-                            captureStillPicture();
-                        } else {
-                            runPrecaptureSequence();
-                        }
-                    }
-                    break;
-                }
-                case STATE_WAITING_PRECAPTURE: {
-                    // CONTROL_AE_STATE can be null on some devices
-                    Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
-                    if (aeState == null ||
-                            aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ||
-                            aeState == CaptureRequest.CONTROL_AE_STATE_FLASH_REQUIRED) {
-                        mState = STATE_WAITING_NON_PRECAPTURE;
-                    }
-                    break;
-                }
-                case STATE_WAITING_NON_PRECAPTURE: {
-                    // CONTROL_AE_STATE can be null on some devices
-                    Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
-                    if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
-                        mState = STATE_PICTURE_TAKEN;
-                        captureStillPicture();
-                    }
-                    break;
-                }
-            }
-        }
-
         @Override
         public void onCaptureProgressed(@NonNull CameraCaptureSession session,
                                         @NonNull CaptureRequest request,
                                         @NonNull CaptureResult partialResult) {
-            process(partialResult);
         }
 
         @Override
         public void onCaptureCompleted(@NonNull CameraCaptureSession session,
                                        @NonNull CaptureRequest request,
                                        @NonNull TotalCaptureResult result) {
-            process(result);
         }
     };
 
@@ -456,30 +441,24 @@ public class Camera2BasicFragment extends Fragment
         }
     }
 
-    public static Camera2BasicFragment newInstance() {
-        return new Camera2BasicFragment();
+    public static Camera2YuvCallbackFragment newInstance() {
+        return new Camera2YuvCallbackFragment();
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.fragment_camera2_basic, container, false);
+        return inflater.inflate(R.layout.fragment_camera2_yuvcallback, container, false);
     }
 
     @Override
     public void onViewCreated(final View view, Bundle savedInstanceState) {
-        view.findViewById(R.id.picture).setOnClickListener(this);
-
         mTextureView = view.findViewById(R.id.texture);
-        mSwPreview = view.findViewById(R.id.swPreview);
-        mSwPreview.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        mSwSaveYuvFile = view.findViewById(R.id.swSaveYuvFile);
+        mSwSaveYuvFile.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if(isChecked){
-                    startPreview();
-                }else{
-                    stopPreview();
-                }
+                mSaveYuvFile = isChecked;
             }
         });
     }
@@ -488,6 +467,7 @@ public class Camera2BasicFragment extends Fragment
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
     }
+
 
     @Override
     public void onResume() {
@@ -525,8 +505,8 @@ public class Camera2BasicFragment extends Fragment
                                            @NonNull int[] grantResults) {
         if (requestCode == REQUEST_CAMERA_PERMISSION) {
             if (grantResults.length != 1 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                ErrorDialog.newInstance(getString(R.string.request_permission))
-                        .show(getChildFragmentManager(), FRAGMENT_DIALOG);
+//                ErrorDialog.newInstance(getString(R.string.request_permission))
+//                        .show(getChildFragmentManager(), FRAGMENT_DIALOG);
             }
         } else {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -557,10 +537,6 @@ public class Camera2BasicFragment extends Fragment
 
                 // We don't use a front facing camera in this sample.
                 Integer facing = mCameraCharacteristics.get(CameraCharacteristics.LENS_FACING);
-
-                Range<Long> aeRange =  mCameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
-                Log.v(TAG,"---- aeRange:"+aeRange.getLower() + ";"+aeRange.getUpper());
-
                 if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
                     continue;
                 }
@@ -572,22 +548,15 @@ public class Camera2BasicFragment extends Fragment
                     continue;
                 }
 
-//                Log.v(TAG,"--- print yuv size!!!");
-//                Size[] sizes =  map.getOutputSizes(ImageFormat.YUV_420_888);
-//                printSize(sizes);
-//
-//                Log.v(TAG,"--- print jpeg size!!!");
-//                Size[] jpegSizes =  map.getOutputSizes(ImageFormat.JPEG);
-//                printSize(jpegSizes);
-
                 // For still image captures, we use the largest available size.
                 Size largest = Collections.max(
                         Arrays.asList(map.getOutputSizes(ImageFormat.RAW10)),
                         new CompareSizesByArea());
 
-                mImageReader = ImageReader.newInstance(largest.getWidth(),largest.getHeight(),ImageFormat.JPEG, 2);
-                mImageReader.setOnImageAvailableListener(
-                        mOnImageAvailableListener, mBackgroundHandler);
+                mImageReaderYuv = ImageReader.newInstance(1920, 1080,
+                        ImageFormat.YUV_420_888, 2);
+                mImageReaderYuv.setOnImageAvailableListener(
+                        mOnYuvImageAvailableListener, mBackgroundHandler);
 
                 // Find out if we need to swap dimension to get the preview size relative to sensor
                 // coordinate.
@@ -663,7 +632,6 @@ public class Camera2BasicFragment extends Fragment
                 Boolean available = mCameraCharacteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
                 mFlashSupported = available == null ? false : available;
 
-                Log.v(TAG, "----- mFlashSupported: " + mFlashSupported);
                 mCameraId = cameraId;
                 return;
             }
@@ -678,7 +646,7 @@ public class Camera2BasicFragment extends Fragment
     }
 
     /**
-     * Opens the camera specified by {@link Camera2BasicFragment#}.
+     * Opens the camera specified by {@link Camera2YuvCallbackFragment#}.
      */
     private void openCamera(int width, int height) {
         Log.v(TAG, "---- openBackCamera();width: " + width + ";height: " + height);
@@ -720,9 +688,10 @@ public class Camera2BasicFragment extends Fragment
                 mCameraDevice.close();
                 mCameraDevice = null;
             }
-            if (null != mImageReader) {
-                mImageReader.close();
-                mImageReader = null;
+
+            if (null != mImageReaderYuv) {
+                mImageReaderYuv.close();
+                mImageReaderYuv = null;
             }
         } catch (InterruptedException e) {
             throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
@@ -754,17 +723,11 @@ public class Camera2BasicFragment extends Fragment
         }
     }
 
-    private void applyColorEffect(CaptureRequest.Builder request,String value) {
-        if (value == null) return;
-        int mode = Integer.parseInt(value);
-        request.set(CaptureRequest.CONTROL_EFFECT_MODE, mode);
-    }
-
     /**
      * Creates a new {@link CameraCaptureSession} for camera preview.
      */
     private void createCameraPreviewSession() {
-        Log.v(TAG, "---- createCameraPreviewSession(); mCameraDevice:"+mCameraDevice);
+        Log.v(TAG, "---- createCameraPreviewSession();");
 
         try {
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
@@ -777,15 +740,16 @@ public class Camera2BasicFragment extends Fragment
             Surface surface = new Surface(texture);
 
             // We set up a CaptureRequest.Builder with the output Surface.
-            mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mPreviewRequestBuilder
+                    = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
 
             mPreviewRequestBuilder.addTarget(surface);
 
             //request builder可以设置多个target，如果需要拿到实时的预览数据，则把imageReader 的surface 也设进去
-//            mPreviewRequestBuilder.addTarget(mImageReaderYuv.getSurface());
+            mPreviewRequestBuilder.addTarget(mImageReaderYuv.getSurface());
 
             // Here, we create a CameraCaptureSession for camera preview.
-            mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
+            mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReaderYuv.getSurface()),
                     new CameraCaptureSession.StateCallback() {
 
                         @Override
@@ -805,7 +769,6 @@ public class Camera2BasicFragment extends Fragment
                                         CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                                 // Flash is automatically enabled when necessary.
                                 setAutoFlash(mPreviewRequestBuilder);
-                                applyColorEffect(mPreviewRequestBuilder,"8");
 
                                 // Finally, we start displaying the camera preview.
                                 mPreviewRequest = mPreviewRequestBuilder.build();
@@ -862,179 +825,13 @@ public class Camera2BasicFragment extends Fragment
         mTextureView.setTransform(matrix);
     }
 
-    /**
-     * Initiate a still image capture.
-     */
-    private void takePicture() {
-        Log.v(TAG, "---- takePicture();");
-        lockFocus();
-//        captureStillPicture();
-    }
-
-    /**
-     * Lock the focus as the first step for a still image capture.
-     */
-    private void lockFocus() {
-        Log.v(TAG, "---- lockFocus();");
-
-        try {
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-
-            // This is how to tell the camera to lock focus.
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                    CameraMetadata.CONTROL_AF_TRIGGER_START);
-
-            // Tell #mCaptureCallback to wait for the lock.
-            mState = STATE_WAITING_LOCK;
-            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback,
-                    mBackgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Run the precapture sequence for capturing a still image. This method should be called when
-     * we get a response in {@link #mCaptureCallback} from {@link #lockFocus()}.
-     */
-    private void runPrecaptureSequence() {
-        Log.v(TAG, "---- runPrecaptureSequence();");
-
-        try {
-            // This is how to tell the camera to trigger.
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-                    CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
-            // Tell #mCaptureCallback to wait for the precapture sequence to be set.
-            mState = STATE_WAITING_PRECAPTURE;
-            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback,
-                    mBackgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Capture a still picture. This method should be called when we get a response in
-     * {@link #mCaptureCallback} from both {@link #lockFocus()}.
-     */
-    private void captureStillPicture() {
-        Log.v(TAG, "--- captureStillPicture();");
-
-        try {
-            final Activity activity = getActivity();
-            if (null == activity || null == mCameraDevice) {
-                return;
-            }
-            // This is the CaptureRequest.Builder that we use to take a picture.
-            final CaptureRequest.Builder captureBuilder =
-                    mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-            captureBuilder.addTarget(mImageReader.getSurface());
-
-            // Use the same AE and AF modes as the preview.
-            captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-            setAutoFlash(captureBuilder);
-
-            // Orientation
-            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
-
-            CameraCaptureSession.CaptureCallback CaptureCallback
-                    = new CameraCaptureSession.CaptureCallback() {
-
-                @Override
-                public void onCaptureCompleted(@NonNull CameraCaptureSession session,
-                                               @NonNull CaptureRequest request,
-                                               @NonNull TotalCaptureResult result) {
-                    Log.v(TAG, "---- onCaptureCompleted();expose time:"+result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
-
-                    showToast("Saved Pic: " + mFile);
-                    unlockFocus();
-                }
-            };
-
-            mPreviewCaptureSession.stopRepeating();
-            mPreviewCaptureSession.abortCaptures();
-            mPreviewCaptureSession.capture(captureBuilder.build(), CaptureCallback, null);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Retrieves the JPEG orientation from the specified screen rotation.
-     *
-     * @param rotation The screen rotation.
-     * @return The JPEG orientation (one of 0, 90, 270, and 360)
-     */
-    private int getOrientation(int rotation) {
-        // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
-        // We have to take that into account and rotate JPEG properly.
-        // For devices with orientation of 90, we simply return our mapping from ORIENTATIONS.
-        // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
-        return (ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360;
-    }
-
-    /**
-     * Unlock the focus. This method should be called when still image capture sequence is
-     * finished.
-     */
-    private void unlockFocus() {
-        Log.v(TAG, "---- unlockFocus();");
-
-        try {
-            // Reset the auto-focus trigger
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                    CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
-            setAutoFlash(mPreviewRequestBuilder);
-            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback,
-                    mBackgroundHandler);
-            // After this, the camera will go back to the normal state of preview.
-            mState = STATE_PREVIEW;
-            mPreviewCaptureSession.setRepeatingRequest(mPreviewRequest, mCaptureCallback,
-                    mBackgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Start Camera Preview
-     */
-    private void startPreview() {
-        createCameraPreviewSession();
-    }
-
-    /**
-     * Stop Camera Preview
-     */
-    private void stopPreview() {
-        mPreviewCaptureSession.close();
-    }
-
-    @Override
-    public void onClick(View view) {
-        switch (view.getId()) {
-            case R.id.startPreview:
-                startPreview();
-                break;
-            case R.id.stopPreview:
-                stopPreview();
-                break;
-            case R.id.picture: {
-                takePicture();
-                break;
-            }
-        }
-    }
-
     private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
         if (mFlashSupported) {
             requestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
         }
     }
+
 
     /**
      * Saves a JPEG {@link Image} into the specified {@link File}.

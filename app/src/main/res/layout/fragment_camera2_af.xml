@@ -26,41 +26,30 @@
     <FrameLayout
         android:id="@+id/control"
         android:layout_width="match_parent"
-        android:layout_height="250dp"
+        android:layout_height="112dp"
         android:layout_alignParentStart="true"
         android:layout_alignParentBottom="true"
         android:background="@color/control_background">
 
-        <androidx.core.widget.NestedScrollView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <Button
-                android:id="@+id/picture"
+            <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/picture" />
+                android:layout_height="wrap_content">
+
+
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content">
-                <TextView
-                    android:text="@string/preview"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="10dp"/>
-                <Switch
-                    android:id="@+id/swPreview"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="10dp" />
+
+
             </LinearLayout>
         </LinearLayout>
-        </androidx.core.widget.NestedScrollView>
 
     </FrameLayout>
 </RelativeLayout>

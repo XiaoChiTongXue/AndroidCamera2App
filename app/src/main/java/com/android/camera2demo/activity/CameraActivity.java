@@ -28,6 +28,7 @@ import com.android.camera2demo.R;
 import com.android.camera2demo.fragment.Camera2BasicFragment;
 import com.android.camera2demo.fragment.Camera2DoubleTextViewFragment;
 import com.android.camera2demo.fragment.Camera2VideoFragment;
+import com.android.camera2demo.fragment.Camera2YuvCallbackFragment;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
@@ -36,6 +37,8 @@ public class CameraActivity extends AppCompatActivity {
     private FrameLayout mContainer;
     private Button mBtnRecord;
     private Button mBtnDoublePreview;
+    private Button mBtnBase;
+    private Button mBtnPreviewYuvCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,14 +46,14 @@ public class CameraActivity extends AppCompatActivity {
         setContentView(R.layout.activity_camera);
         initView();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+       /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if(!Settings.canDrawOverlays(getApplicationContext())) {
                 //启动Activity让用户授权
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
                 intent.setData(Uri.parse("package:" + getPackageName()));
                 startActivityForResult(intent,100);
             }
-        }
+        }*/
     }
 
     private void initView(){
@@ -70,6 +73,24 @@ public class CameraActivity extends AppCompatActivity {
             public void onClick(View v) {
                showFrameLayout(true);
                switchFragment(Camera2DoubleTextViewFragment.newInstance());
+            }
+        });
+
+        mBtnBase = findViewById(R.id.btn_base);
+        mBtnBase.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showFrameLayout(true);
+                switchFragment(Camera2BasicFragment.newInstance());
+            }
+        });
+
+        mBtnPreviewYuvCallback = findViewById(R.id.btn_yuv_callback);
+        mBtnPreviewYuvCallback.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showFrameLayout(true);
+                switchFragment(Camera2YuvCallbackFragment.newInstance());
             }
         });
     }

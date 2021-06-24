@@ -21,6 +21,10 @@
     <string name="camera_error">This device doesn\'t support Camera2 API.</string>
     <string name="stop">stop</string>
     <string name="record">record</string>
+    <string name="base">base</string>
+    <string name="preview">preview</string>
+    <string name="save_yuv_file">save yuv file</string>
+    <string name="title_yuv_callback">preview yuv callback</string>
     <string name="permission_request">This sample needs permission for camera and audio recording.</string>
     <string name="double_preview">doublePreview</string>
     <string name="background_record">BackGroundRecord</string>
