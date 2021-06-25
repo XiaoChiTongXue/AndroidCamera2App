@@ -25,7 +25,7 @@ AndroidCamera2Demo
 -------------
 
 <div align="center">
-    <img src="./images/dev_wechat.png" widht="809px" height="404px" alt="微信公众号"/>
+    <img src="images/dev_wechat.png" widht="809px" height="404px" alt="微信公众号"/>
 </div>
 
 ### 介绍
@@ -39,8 +39,8 @@ AndroidCamera2Demo
 -------------
 这里简单截取了几个界面，更多功能自己去发现吧
 <div align="center">
-    <img src="./images/device-01.png" widht="295px" height="640px" alt="mainPage"/>
-    <img src="./images/device-01.png" widht="295px" height="640px" alt="baseFun"/>
+    <img src="images/device-01.png" widht="295px" height="640px" alt="mainPage"/>
+    <img src="images/device-01.png" widht="295px" height="640px" alt="baseFun"/>
 </div>
 
 ### 开发环境
